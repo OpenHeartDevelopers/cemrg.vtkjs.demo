@@ -133,8 +133,15 @@ loadData('./data/data_coarse_scaled.vtk').then((polydata) => {
     
     const light = vtkLight.newInstance();
     light.setPosition(1, 1, 1);
+    light.setFocalPoint(0, 0, 0);
     light.setIntensity(0.4);
     renderer.addLight(light);
+
+    const light2 = vtkLight.newInstance();
+    light2.setPosition(-1, -1, -1);
+    light2.setFocalPoint(0, 0, 0);
+    light2.setIntensity(0.6);
+    renderer.addLight(light2);
 
     renderWindow.render();
 
@@ -158,8 +165,8 @@ representationSelector.addEventListener('change', (e) => {
 });
 
 resolutionChange.addEventListener('input', (e) => {
-    const resolution = Number(e.target.value);
-    currentSource.setResolution(resolution);
+    const opacity = Number(e.target.value);
+    actor.getProperty().setOpacity(opacity/10);
     renderWindow.render();
 });
 
