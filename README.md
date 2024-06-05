@@ -1,52 +1,13 @@
-GitHub Copilot
-Sure, here's a basic README.md for your project:
+# README
 
 Install the necessary dependencies:
 ```shell
-npm install @kitware/vtk.js
+npm install @kitware/vtk.js http-server
 ```
 
-Create a src directory and an index.js file inside it. Paste your VTK.js code into this index.js file.
-Install webpack and webpack-cli as dev dependencies to bundle your code:
+Install dev-only packs: 
 ```shell
 npm install --save-dev webpack webpack-cli html-loader
-```
-
-Create a webpack.config.js file in the root of your project with the following content:
-```js
-const path = require('path');
-
-module.exports = {
-  entry: './src/index.js',
-  output: {
-    filename: 'main.js',
-    path: path.resolve(__dirname, 'dist'),
-  },
-};
-```
-
-Modify the scripts section of your package.json to include a build command:
-```json
-{
-  "name": "cemrg.vtkjs.demo",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "build": "webpack"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "@kitware/vtk.js": "^30.5.2",
-    "http-server": "^14.1.1"
-  },
-  "devDependencies": {
-    "webpack": "^5.91.0",
-    "webpack-cli": "^5.1.4"
-  }
-}
 ```
 
 Run the build script `npm run build`
@@ -66,10 +27,3 @@ npx http-server
 Navigate to your dist directory and start the server:
 By default, this will start a server on http://localhost:8080. You can then open this URL in your web browser to see your project.
 
-If http-server is not recognized as a command, you can use npx to run it:
-
-```
-
-This README.md provides instructions for setting up and running your project. You can add more details as needed, such as a description of the project, how to use it, how to contribute, etc.
-
-# Have this work 
