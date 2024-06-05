@@ -1,0 +1,19 @@
+# .gitignore
+
+# Ignore node_modules directory
+node_modules/
+
+# Ignore dist directory
+dist/
+
+# Ignore .DS_Store on MacOS
+.DS_Store
+
+# Ignore npm debug logs
+npm-debug.log*
+
+# Ignore yarn debug logs
+yarn-debug.log*
+
+# Ignore yarn error logs
+yarn-error.log*
