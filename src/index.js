@@ -180,6 +180,18 @@ vrbutton.addEventListener('click', (e) => {
     }
 });
 
+window.onload = function () {
+    let message = ` Thank you for visiting the CEMRG website.
+    
+    To view this in VR, you need to have the WebXR Emulator extension installed in your browser.
+    Look for it on the Extension store in your browser or use the link provided. 
+    
+    Once installed, click on the VR button below to view the model in VR.
+    
+    Enjoy! `
+    alert(message);
+};
+
 // -----------------------------------------------------------
 // Make some variables global so that you can inspect and
 // modify objects in your browser's developer console:
