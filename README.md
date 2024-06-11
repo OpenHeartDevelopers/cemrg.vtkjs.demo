@@ -37,3 +37,5 @@ Developers seeking to develop VR experiences without hardware may make use of th
 - Close and reopen the browser.
 - Press F12 to access the browser console.
 - Select the "WebXR" tab to selected XR emulated hardware and view controls.
+
+[Interactive instructions](https://scribehow.com/shared/Install_Chrome_Extension_for_VR_Visualization__vjzrmIAYSoOtJBrybbPZng)
