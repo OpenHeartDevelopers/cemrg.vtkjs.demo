@@ -15,3 +15,24 @@ export default function loadData(url) {
         return outputData;
     });
 }
+
+export function loadDataFromNumber(meshNumber) {
+    let url;
+    console.log('Loading data from number:', meshNumber);
+    switch (meshNumber) {
+        case 0:
+            url = './data/healthy.vtk';
+            break;
+        case 1:
+            url = './data/afib.vtk';
+            break;
+        case 2:
+            url = './data/hr.vtk';
+            break;
+        default:
+            console.log('Invalid mesh number');
+            url = 'data/data_coarse_scaled.vtk';
+    }
+
+    return loadData(url);
+}

@@ -26,6 +26,7 @@ import vtkLight from '@kitware/vtk.js/Rendering/Core/Light';
 // Custom UI controls, including button to start XR session
 import controlPanel from './controller.html';
 import loadData from './loadData';
+import { loadDataFromNumber } from './loadData.js';
 import generateCone from './generateData';
 
 // Dynamically load WebXR polyfill from CDN for WebVR and Cardboard API backwards compatibility
@@ -65,89 +66,109 @@ const actor = vtkActor.newInstance();
 // ----------------------------------------------------------------------------
 
 let currentSource = null;
-console.log('Loading data...');
 
-loadData('./data/data_coarse_scaled.vtk').then((polydata) => {
-    console.log('Loaded data:', polydata);
-    currentSource = polydata;
-    
-    let pdLoaded = true;
-    let zPosition = -20.0;
-    if (currentSource === null) {
-        currentSource = generateCone();
-        pdLoaded = false;
-        zPosition = -20.0;
-    }
-    
-    if (pdLoaded) {
-        mapper.setInputData(currentSource);
+function clearScene(renderer, renderWindow) {
+    // Get all actors from the renderer
+    const actors = renderer.getActors();
 
-        const cellData = currentSource.getCellData();
-        const numberOfArrays = cellData.getNumberOfArrays();
-        console.log('Number of cell data arrays:', numberOfArrays);
+    // Remove each actor from the renderer
+    actors.forEach((actor) => {
+        renderer.removeActor(actor);
+    });
 
-        if (numberOfArrays > 0) {
-            const arrayName = cellData.getArrayName(0);
-            console.log('Array name:', arrayName);
-
-            cellData.setActiveScalars(arrayName);
-        
-            const scalars = cellData.getScalars(arrayName);
-            if (scalars) {
-                const range = scalars.getRange();
-
-                console.log('Range:', range);
-    
-                const lut = vtkColorTransferFunction.newInstance();
-                lut.setRange(range[0], range[1]);
-                lut.addRGBPoint(range[0], 0.5, 0.0, 0.0);
-                // lut.addRGBPoint((range[0] + range[1]) / 2.0, 0.0, 0.8, 0.0);
-                lut.addRGBPoint(range[1], 0.1, 0.0, 1.0);
-
-                lut.setDiscretize(true);
-                lut.setNumberOfValues(range[1] - range[0] + 1 );
-    
-                mapper.setLookupTable(lut);
-                mapper.setScalarRange(range[0], range[1]);
-            } else {
-                console.log('No active scalar array in the cell data.');
-    
-                const pointData = currentSource.getPointData();
-                console.log('Number of point data arrays:', pointData.getNumberOfArrays());
-            }
-
-
-        }
-        
-    } else {
-        mapper.setInputConnection(currentSource);
-    }
-    
-    actor.setMapper(mapper);
-    actor.setPosition(0.0, 0.0, zPosition);
-    actor.getProperty().setSpecular(0.75);      // Set the specular coefficient [0, 1]
-    actor.getProperty().setSpecularPower(20); // Set the specular power
-    
-    renderer.addActor(actor);
+    // Reset the camera
     renderer.resetCamera();
-    
-    const light = vtkLight.newInstance();
-    light.setPosition(1, 1, 1);
-    light.setFocalPoint(0, 0, 0);
-    light.setIntensity(0.4);
-    renderer.addLight(light);
 
-    const light2 = vtkLight.newInstance();
-    light2.setPosition(-1, -1, -1);
-    light2.setFocalPoint(0, 0, 0);
-    light2.setIntensity(0.6);
-    renderer.addLight(light2);
-
+    // Render the scene
     renderWindow.render();
+}
 
-}).catch((error) => {
-    console.error('Error loading data:', error);
-});
+// Function to load and process data
+function processData(meshNumber, addLight = true) {
+    console.log('Loading data...');
+
+    loadDataFromNumber(meshNumber).then((polydata) => {
+        console.log('Loaded data:', polydata);
+        currentSource = polydata;
+
+        let pdLoaded = true;
+        let zPosition = -20.0;
+        if (currentSource === null) {
+            currentSource = generateCone();
+            pdLoaded = false;
+            zPosition = -20.0;
+        }
+
+        if (pdLoaded) {
+            mapper.setInputData(currentSource);
+
+            const cellData = currentSource.getCellData();
+            const numberOfArrays = cellData.getNumberOfArrays();
+            console.log('Number of cell data arrays:', numberOfArrays);
+
+            if (numberOfArrays > 0) {
+                const arrayName = cellData.getArrayName(0);
+                console.log('Array name:', arrayName);
+
+                cellData.setActiveScalars(arrayName);
+
+                const scalars = cellData.getScalars(arrayName);
+                if (scalars) {
+                    const range = scalars.getRange();
+
+                    console.log('Range:', range);
+
+                    const lut = vtkColorTransferFunction.newInstance();
+                    lut.setRange(range[0], range[1]);
+                    lut.addRGBPoint(range[0], 0.5, 0.0, 0.0);
+                    // lut.addRGBPoint((range[0] + range[1]) / 2.0, 0.0, 0.8, 0.0);
+                    lut.addRGBPoint(range[1], 0.1, 0.0, 1.0);
+
+                    lut.setDiscretize(true);
+                    lut.setNumberOfValues(range[1] - range[0] + 1);
+
+                    mapper.setLookupTable(lut);
+                    mapper.setScalarRange(range[0], range[1]);
+                } else {
+                    console.log('No active scalar array in the cell data.');
+
+                    const pointData = currentSource.getPointData();
+                    console.log('Number of point data arrays:', pointData.getNumberOfArrays());
+                }
+            }
+        } else {
+            mapper.setInputConnection(currentSource);
+        }
+
+        actor.setMapper(mapper);
+        actor.setPosition(0.0, 0.0, zPosition);
+        actor.getProperty().setSpecular(0.75);      // Set the specular coefficient [0, 1]
+        actor.getProperty().setSpecularPower(20); // Set the specular power
+
+        renderer.addActor(actor);
+        renderer.resetCamera();
+
+        if (addLight) { 
+            const light = vtkLight.newInstance();
+            light.setPosition(1, 1, 1);
+            light.setFocalPoint(0, 0, 0);
+            light.setIntensity(0.5);
+            renderer.addLight(light);
+    
+            const light2 = vtkLight.newInstance();
+            light2.setPosition(-1, -1, -1);
+            light2.setFocalPoint(0, 0, 0);
+            light2.setIntensity(0.7);
+            renderer.addLight(light2);
+        }
+
+        renderWindow.render();
+    });
+}
+
+console.log("Initially load the first mesh")
+processData(0, true);
+
 
 // -----------------------------------------------------------
 // UI control handling
@@ -157,12 +178,13 @@ fullScreenRenderer.addController(controlPanel);
 const representationSelector = document.querySelector('.representations');
 const resolutionChange = document.querySelector('.resolution');
 const vrbutton = document.querySelector('.vrbutton');
+const loadMeshSelector = document.querySelector('.meshes');
 
 representationSelector.addEventListener('change', (e) => {
     const newRepValue = Number(e.target.value);
     actor.getProperty().setRepresentation(newRepValue);
     renderWindow.render();
-});
+    });
 
 resolutionChange.addEventListener('input', (e) => {
     const opacity = Number(e.target.value);
@@ -174,12 +196,20 @@ vrbutton.addEventListener('click', (e) => {
     if (vrbutton.textContent === 'Send To VR') {
         XRHelper.startXR(XrSessionTypes.HmdVR);
         vrbutton.textContent = 'Return From VR';
-    } else {
+        } else {
         XRHelper.stopXR();
         vrbutton.textContent = 'Send To VR';
     }
-});
-
+    });
+    
+// Listen for changes to the 'meshes' select element and load the selected mesh
+loadMeshSelector.addEventListener('change', function (event) {
+    const meshNumber = Number(event.target.value);
+    const meshName = event.target.options[event.target.selectedIndex].text;
+    console.log('Loading mesh:', meshNumber, meshName);
+        clearScene(renderer, renderWindow);
+        processData(meshNumber, false);
+    });
 window.onload = function () {
     let message = ` Thank you for visiting the CEMRG website.
     
