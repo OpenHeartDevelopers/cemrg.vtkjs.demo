@@ -17,3 +17,5 @@ yarn-debug.log*
 
 # Ignore yarn error logs
 yarn-error.log*
+
+.vscode/
