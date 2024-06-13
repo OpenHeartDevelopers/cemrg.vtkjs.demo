@@ -9,6 +9,7 @@ import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransf
 import vtkFullScreenRenderWindow from '@kitware/vtk.js/Rendering/Misc/FullScreenRenderWindow';
 import vtkWebXRRenderWindowHelper from '@kitware/vtk.js/Rendering/WebXR/RenderWindowHelper';
 import vtkMapper from '@kitware/vtk.js/Rendering/Core/Mapper';
+import vtkCompositeVRManipulator from '@kitware/vtk.js/Interaction/Manipulators/CompositeVRManipulator.js';
 
 import { AttributeTypes } from '@kitware/vtk.js/Common/DataModel/DataSetAttributes/Constants';
 import { FieldDataTypes } from '@kitware/vtk.js/Common/DataModel/DataSet/Constants';
@@ -200,6 +201,87 @@ resolutionChange.addEventListener('input', (e) => {
 
 let xrSession = null;
 
+vrbutton.addEventListener('click', async (e) => {
+    if (vrbutton.textContent === 'Send To VR') {
+        console.log('Requesting XR session...');
+        XRHelper.startXR(XrSessionTypes.HmdVR);
+        // try {
+        //     xrSession = await navigator.xr.requestSession('immersive-vr', {
+        //         optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'],
+        //     });
+
+        //     if (xrSession) {
+        //         // renderer.getRenderWindow().getApiSpecificRenderWindow().setXRSession(xrSession);
+
+        //         setupVRInteraction(xrSession, renderer);
+        //         setupVRManipulators(renderer, renderWindow);
+
+        //         vrbutton.textContent = 'Return From VR';
+        //     }
+        // } catch (error) {
+        //     console.error('Error starting XR session', error);
+        // }
+    } else {
+        if (xrSession) {
+            await xrSession.end();
+            xrSession = null;
+        }
+        vrbutton.textContent = 'Send To VR';
+    }
+});
+
+function setupVRInteraction(xrSession, renderer) {
+    xrSession.addEventListener('inputsourceschange', (event) => {
+        event.added.forEach((inputSource) => {
+            if (inputSource.targetRayMode === 'tracked-pointer') {
+                const pointer = createPointer(inputSource);
+                renderer.getRenderWindow().getApiSpecificRenderWindow().addActor(pointer);
+            }
+
+            if (inputSource.gamepad) {
+                inputSource.addEventListener('squeezestart', onSqueezeStart);
+                inputSource.addEventListener('squeezeend', onSqueezeEnd);
+                inputSource.addEventListener('selectstart', onSelectStart);
+                inputSource.addEventListener('selectend', onSelectEnd);
+            }
+        });
+
+        event.removed.forEach((inputSource) => {
+            if (inputSource.gamepad) {
+                inputSource.removeEventListener('squeezestart', onSqueezeStart);
+                inputSource.removeEventListener('squeezeend', onSqueezeEnd);
+                inputSource.removeEventListener('selectstart', onSelectStart);
+                inputSource.removeEventListener('selectend', onSelectEnd);
+            }
+        });
+    });
+}
+
+function createPointer(inputSource) {
+    const geometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0, 0, -1)
+    ]);
+
+    const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
+    const line = new THREE.Line(geometry, material);
+
+    if (inputSource.targetRaySpace) {
+        const matrix = new THREE.Matrix4().fromArray(inputSource.targetRaySpace.matrix);
+        line.applyMatrix4(matrix);
+    }
+
+    return line;
+}
+
+function setupVRManipulators(renderer, renderWindow) {
+    const interactor = renderWindow.getInteractor();
+    const vrManipulator = vtkCompositeVRManipulator.newInstance();
+    interactor.addManipulator(vrManipulator);
+    renderer.resetCamera();
+    renderWindow.render();
+}
+
 function onSqueezeStart(event) {
     console.log('Squeeze start');
     alert('Squeeze start');
@@ -218,132 +300,6 @@ function onSelectStart(event) {
 function onSelectEnd(event) {
     console.log('Select end');
     alert('Select end');
-}
-
-// This function creates a line from the target ray
-function createPointer(inputSource) {
-    // Get the target ray
-    const targetRay = inputSource.targetRaySpace;
-
-    // Create a new line geometry
-    const geometry = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(0, 0, 0), // Start at the origin
-        new THREE.Vector3(0, 0, -1) // End one unit in the -Z direction
-    ]);
-
-    // Create a new line material
-    const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
-
-    // Create a new line
-    const line = new THREE.Line(geometry, material);
-
-    // Set the line's matrix to the target ray's matrix
-    line.matrix.fromArray(targetRay.matrix);
-
-    // Update the line's matrix world
-    line.updateMatrixWorld(true);
-
-    return line;
-}
-
-vrbutton.addEventListener('click', async (e) => {
-    if (vrbutton.textContent === 'Send To VR') {
-        console.log('Requesting XR session...');
-        // Request a new WebXR session
-        // xrSession = await navigator.xr.requestSession('immersive-vr', {
-        //     optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
-        // });
-
-        // console.log(xrSession.inputSources); // Add this line
-        // for (let inputSource of xrSession.inputSources) {
-        //     console.log(inputSource);
-        //     if (inputSource.targetRayMode === 'tracked-pointer') {
-        //         // This is a controller
-        //         const pointer = createPointer(inputSource);
-        //         scene.add(pointer);
-        //     }
-
-        //     if (inputSource.gamepad) {
-        //         // This is a gamepad input source
-        //         inputSource.addEventListener('squeezestart', onSqueezeStart);
-        //         inputSource.addEventListener('squeezeend', onSqueezeEnd);
-        //         inputSource.addEventListener('selectstart', onSelectStart);
-        //         inputSource.addEventListener('selectend', onSelectEnd);
-        //     }
-        // }
-
-        // xrSession.addEventListener('inputsourceschange', event => { 
-        //     for (let inputSource of event.removed) {
-        //         if (inputSource.gamepad) {
-        //             // This is a gamepad input source
-        //             inputSource.removeEventListener('squeezestart', onSqueezeStart);
-        //             inputSource.removeEventListener('squeezeend', onSqueezeEnd);
-        //             inputSource.removeEventListener('selectstart', onSelectStart);
-        //             inputSource.removeEventListener('selectend', onSelectEnd);
-        //         }
-        //     }
-        // });
-
-        // // Start the session
-        // XRHelper.startXR(xrSession);
-        
-        XRHelper.startXR(XrSessionTypes.HmdVR);
-
-        vrbutton.textContent = 'Return From VR';
-    } else {
-        // End the session
-        XRHelper.stopXR();
-        xrSession = null;
-
-        vrbutton.textContent = 'Send To VR';
-    }
-});
-
-// This function starts the WebXR session
-async function startXR() {
-    // Request a new WebXR session
-    xrSession = await navigator.xr.requestSession('immersive-vr', {
-        optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
-    });
-
-    // Set the renderer's XR session
-    renderer.xr.setSession(xrSession);
-
-    // Set up the render loop
-    xrSession.requestAnimationFrame(render);
-}
-
-// This function renders a frame
-function render(time, xrFrame) {
-    // Request the next animation frame
-    xrSession.requestAnimationFrame(render);
-
-    // Get the pose of the viewer
-    const pose = xrFrame.getViewerPose(xrReferenceSpace);
-
-    // If the pose is not null, render the scene
-    if (pose) {
-        // Get the WebGL layer
-        const layer = xrSession.renderState.baseLayer;
-
-        // Set the WebGL context's framebuffer
-        renderer.context.bindFramebuffer(renderer.context.FRAMEBUFFER, layer.framebuffer);
-
-        // Clear the canvas
-        renderer.clear();
-
-        // Render the scene for each view
-        for (let view of pose.views) {
-            // Get the viewport for the view
-            const viewport = layer.getViewport(view);
-
-            // Set the renderer's viewport
-            renderer.setViewport(viewport.x, viewport.y, viewport.width, viewport.height);
-
-            // Render the scene
-            renderer.render(scene, camera);
-        }
-    }
 }
     
 // Listen for changes to the 'meshes' select element and load the selected mesh

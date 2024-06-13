@@ -4,12 +4,11 @@ import '@kitware/vtk.js/favicon';
 import '@kitware/vtk.js/Rendering/Profiles/Geometry';
 
 import vtkActor from '@kitware/vtk.js/Rendering/Core/Actor';
-import vtkCalculator from '@kitware/vtk.js/Filters/General/Calculator';
-import vtkConeSource from '@kitware/vtk.js/Filters/Sources/ConeSource';
+
+import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction';
 import vtkFullScreenRenderWindow from '@kitware/vtk.js/Rendering/Misc/FullScreenRenderWindow';
 import vtkWebXRRenderWindowHelper from '@kitware/vtk.js/Rendering/WebXR/RenderWindowHelper';
 import vtkMapper from '@kitware/vtk.js/Rendering/Core/Mapper';
-import vtkXMLPolyDataReader from '@kitware/vtk.js/IO/XML/XMLPolyDataReader';
 
 import { AttributeTypes } from '@kitware/vtk.js/Common/DataModel/DataSetAttributes/Constants';
 import { FieldDataTypes } from '@kitware/vtk.js/Common/DataModel/DataSet/Constants';
@@ -22,9 +21,12 @@ import '@kitware/vtk.js/IO/Core/DataAccessHelper/JSZipDataAccessHelper';
 
 import vtkResourceLoader from '@kitware/vtk.js/IO/Core/ResourceLoader';
 
+import vtkLight from '@kitware/vtk.js/Rendering/Core/Light';
+
 // Custom UI controls, including button to start XR session
 import controlPanel from './controller.html';
 import loadData from './loadData';
+import { loadDataFromNumber } from './loadData.js';
 import generateCone from './generateData';
 
 // Dynamically load WebXR polyfill from CDN for WebVR and Cardboard API backwards compatibility
@@ -44,13 +46,16 @@ if (navigator.xr === undefined) {
 // ----------------------------------------------------------------------------
 
 const fullScreenRenderer = vtkFullScreenRenderWindow.newInstance({
-    background: [0, 0, 0],
+    background: [0.0, 0.0, 0.0],
 });
 const renderer = fullScreenRenderer.getRenderer();
 const renderWindow = fullScreenRenderer.getRenderWindow();
 const XRHelper = vtkWebXRRenderWindowHelper.newInstance({
     renderWindow: fullScreenRenderer.getApiSpecificRenderWindow(),
 });
+
+const mapper = vtkMapper.newInstance();
+const actor = vtkActor.newInstance();
 
 // ----------------------------------------------------------------------------
 // Example code
@@ -60,47 +65,116 @@ const XRHelper = vtkWebXRRenderWindowHelper.newInstance({
 // this
 // ----------------------------------------------------------------------------
 
-loadData('./data/data_coarse_scaled.vtk').then((polydata) => {
-    console.log('Loaded data:', polydata);
-    // ... create mapper and actor for polydata ...
-    const mapper = vtkMapper.newInstance();
-    mapper.setInputData(polydata);
+let currentSource = null;
 
-    const actor = vtkActor.newInstance();
-    actor.setMapper(mapper);
+function clearScene(renderer, renderWindow) {
+    // Get all actors from the renderer
+    const actors = renderer.getActors();
 
-    // Add your actor to the renderer
-    renderer.addActor(actor);
+    // Remove each actor from the renderer
+    actors.forEach((actor) => {
+        renderer.removeActor(actor);
+    });
+
+    // Reset the camera
     renderer.resetCamera();
+
+    // Render the scene
     renderWindow.render();
-}).catch((error) => {
-    console.error('Could not load data file:', error);
+}
 
-    // Fallback to displaying the simple mesh
-    const outputPort = generateCone();
+// Function to load and process data
+function processData(meshNumber, addLight = true) {
+    console.log('Loading data...');
 
-    const mapper = vtkMapper.newInstance();
-    mapper.setInputConnection(outputPort);
+    loadDataFromNumber(meshNumber).then((polydata) => {
+        console.log('Loaded data:', polydata);
+        currentSource = polydata;
 
-    const actor = vtkActor.newInstance();
-    actor.setMapper(mapper);
-    actor.setPosition(0.0, 0.0, -20.0);
+        let pdLoaded = true;
+        let zPosition = -20.0;
+        if (currentSource === null) {
+            currentSource = generateCone();
+            pdLoaded = false;
+            zPosition = -20.0;
+        }
 
-    renderer.addActor(actor);
-    renderer.resetCamera();
-    renderWindow.render();
-});
+        if (pdLoaded) {
+            mapper.setInputData(currentSource);
 
-// const mapper = vtkMapper.newInstance();
-// mapper.setInputConnection(filter.getOutputPort());
+            const cellData = currentSource.getCellData();
+            const numberOfArrays = cellData.getNumberOfArrays();
+            console.log('Number of cell data arrays:', numberOfArrays);
 
-// const actor = vtkActor.newInstance();
-// actor.setMapper(mapper);
-// actor.setPosition(0.0, 0.0, -20.0);
+            if (numberOfArrays > 0) {
+                const arrayName = cellData.getArrayName(0);
+                console.log('Array name:', arrayName);
 
-// renderer.addActor(actor);
-// renderer.resetCamera();
-// renderWindow.render();
+                cellData.setActiveScalars(arrayName);
+
+                const scalars = cellData.getScalars(arrayName);
+                if (scalars) {
+                    const range = scalars.getRange();
+
+                    console.log('Range:', range);
+
+                    const lut = vtkColorTransferFunction.newInstance();
+                    lut.setRange(range[0], range[1]);
+                    lut.addRGBPoint(range[0], 0.5, 0.0, 0.0);
+                    // lut.addRGBPoint((range[0] + range[1]) / 2.0, 0.0, 0.8, 0.0);
+                    lut.addRGBPoint(range[1], 0.1, 0.0, 1.0);
+
+                    lut.setDiscretize(true);
+                    lut.setNumberOfValues(range[1] - range[0] + 1);
+
+                    mapper.setLookupTable(lut);
+                    mapper.setScalarRange(range[0], range[1]);
+                } else {
+                    console.log('No active scalar array in the cell data.');
+
+                    const pointData = currentSource.getPointData();
+                    console.log('Number of point data arrays:', pointData.getNumberOfArrays());
+                }
+            }
+        } else {
+            mapper.setInputConnection(currentSource);
+        }
+
+        actor.setMapper(mapper);
+        actor.setPosition(0.0, 0.0, zPosition);
+        actor.getProperty().setSpecular(0.75);      // Set the specular coefficient [0, 1]
+        actor.getProperty().setSpecularPower(20); // Set the specular power
+
+        renderer.addActor(actor);
+        renderer.resetCamera();
+
+        if (addLight) { 
+            const light = vtkLight.newInstance();
+            light.setPosition(1, 1, 1);
+            light.setFocalPoint(0, 0, 0);
+            light.setIntensity(0.5);
+            renderer.addLight(light);
+    
+            const light2 = vtkLight.newInstance();
+            light2.setPosition(-1, -1, -1);
+            light2.setFocalPoint(0, 0, 0);
+            light2.setIntensity(0.7);
+            renderer.addLight(light2);
+
+            const light3 = vtkLight.newInstance();
+            light2.setPosition(0, -1, -1);
+            light2.setFocalPoint(0, 0, 0);
+            light2.setIntensity(0.9);
+            renderer.addLight(light3);
+        }
+
+        renderWindow.render();
+    });
+}
+
+console.log("Initially load the first mesh")
+processData(0, true);
+
 
 // -----------------------------------------------------------
 // UI control handling
@@ -110,35 +184,157 @@ fullScreenRenderer.addController(controlPanel);
 const representationSelector = document.querySelector('.representations');
 const resolutionChange = document.querySelector('.resolution');
 const vrbutton = document.querySelector('.vrbutton');
+const loadMeshSelector = document.querySelector('.meshes');
 
 representationSelector.addEventListener('change', (e) => {
     const newRepValue = Number(e.target.value);
     actor.getProperty().setRepresentation(newRepValue);
     renderWindow.render();
-});
+    });
 
 resolutionChange.addEventListener('input', (e) => {
-    const resolution = Number(e.target.value);
-    coneSource.setResolution(resolution);
+    const opacity = Number(e.target.value);
+    actor.getProperty().setOpacity(opacity/10);
     renderWindow.render();
 });
 
-vrbutton.addEventListener('click', (e) => {
+let xrSession = null;
+
+function onSqueezeStart(event) {
+    console.log('Squeeze start');
+    alert('Squeeze start');
+}
+
+function onSqueezeEnd(event) {
+    console.log('Squeeze end');
+    alert('Squeeze end');
+}
+
+function onSelectStart(event) {
+    console.log('Select start');
+    alert('Select start');
+}
+
+function onSelectEnd(event) {
+    console.log('Select end');
+    alert('Select end');
+}
+
+// This function creates a line from the target ray
+function createPointer(inputSource) {
+    // Get the target ray
+    const targetRay = inputSource.targetRaySpace;
+
+    // Create a new line geometry
+    const geometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0), // Start at the origin
+        new THREE.Vector3(0, 0, -1) // End one unit in the -Z direction
+    ]);
+
+    // Create a new line material
+    const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
+
+    // Create a new line
+    const line = new THREE.Line(geometry, material);
+
+    // Set the line's matrix to the target ray's matrix
+    line.matrix.fromArray(targetRay.matrix);
+
+    // Update the line's matrix world
+    line.updateMatrixWorld(true);
+
+    return line;
+}
+
+vrbutton.addEventListener('click', async (e) => {
     if (vrbutton.textContent === 'Send To VR') {
+        console.log('Requesting XR session...');
+        // Request a new WebXR session        
         XRHelper.startXR(XrSessionTypes.HmdVR);
+
         vrbutton.textContent = 'Return From VR';
     } else {
+        // End the session
         XRHelper.stopXR();
+        xrSession = null;
+
         vrbutton.textContent = 'Send To VR';
     }
 });
+
+// This function starts the WebXR session
+async function startXR() {
+    // Request a new WebXR session
+    xrSession = await navigator.xr.requestSession('immersive-vr', {
+        optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
+    });
+
+    // Set the renderer's XR session
+    renderer.xr.setSession(xrSession);
+
+    // Set up the render loop
+    xrSession.requestAnimationFrame(render);
+}
+
+// This function renders a frame
+function render(time, xrFrame) {
+    // Request the next animation frame
+    xrSession.requestAnimationFrame(render);
+
+    // Get the pose of the viewer
+    const pose = xrFrame.getViewerPose(xrReferenceSpace);
+
+    // If the pose is not null, render the scene
+    if (pose) {
+        // Get the WebGL layer
+        const layer = xrSession.renderState.baseLayer;
+
+        // Set the WebGL context's framebuffer
+        renderer.context.bindFramebuffer(renderer.context.FRAMEBUFFER, layer.framebuffer);
+
+        // Clear the canvas
+        renderer.clear();
+
+        // Render the scene for each view
+        for (let view of pose.views) {
+            // Get the viewport for the view
+            const viewport = layer.getViewport(view);
+
+            // Set the renderer's viewport
+            renderer.setViewport(viewport.x, viewport.y, viewport.width, viewport.height);
+
+            // Render the scene
+            renderer.render(scene, camera);
+        }
+    }
+}
+    
+// Listen for changes to the 'meshes' select element and load the selected mesh
+loadMeshSelector.addEventListener('change', function (event) {
+    const meshNumber = Number(event.target.value);
+    const meshName = event.target.options[event.target.selectedIndex].text;
+    console.log('Loading mesh:', meshNumber, meshName);
+        clearScene(renderer, renderWindow);
+        processData(meshNumber, false);
+    });
+window.onload = function () {
+    let message = ` Thank you for visiting the CEMRG website.
+    
+    To view this in VR, you need to have the WebXR Emulator extension installed in your browser.
+    Look for it on the Extension store in your browser or use the link provided. 
+    
+    Once installed, click on the VR button below to view the model in VR.
+    
+    Enjoy! `
+    alert(message);
+};
 
 // -----------------------------------------------------------
 // Make some variables global so that you can inspect and
 // modify objects in your browser's developer console:
 // -----------------------------------------------------------
 
-global.source = coneSource;
+global.source = currentSource;
 global.mapper = mapper;
 global.actor = actor;
 global.renderer = renderer;
