@@ -250,42 +250,44 @@ vrbutton.addEventListener('click', async (e) => {
     if (vrbutton.textContent === 'Send To VR') {
         console.log('Requesting XR session...');
         // Request a new WebXR session
-        xrSession = await navigator.xr.requestSession('immersive-vr', {
-            optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
-        });
+        // xrSession = await navigator.xr.requestSession('immersive-vr', {
+        //     optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
+        // });
 
-        console.log(xrSession.inputSources); // Add this line
-        for (let inputSource of xrSession.inputSources) {
-            console.log(inputSource);
-            if (inputSource.targetRayMode === 'tracked-pointer') {
-                // This is a controller
-                const pointer = createPointer(inputSource);
-                scene.add(pointer);
-            }
-            
-            if (inputSource.gamepad) {
-                // This is a gamepad input source
-                inputSource.addEventListener('squeezestart', onSqueezeStart);
-                inputSource.addEventListener('squeezeend', onSqueezeEnd);
-                inputSource.addEventListener('selectstart', onSelectStart);
-                inputSource.addEventListener('selectend', onSelectEnd);
-            }
-        }
+        // console.log(xrSession.inputSources); // Add this line
+        // for (let inputSource of xrSession.inputSources) {
+        //     console.log(inputSource);
+        //     if (inputSource.targetRayMode === 'tracked-pointer') {
+        //         // This is a controller
+        //         const pointer = createPointer(inputSource);
+        //         scene.add(pointer);
+        //     }
 
-        xrSession.addEventListener('inputsourceschange', event => { 
-            for (let inputSource of event.removed) {
-                if (inputSource.gamepad) {
-                    // This is a gamepad input source
-                    inputSource.removeEventListener('squeezestart', onSqueezeStart);
-                    inputSource.removeEventListener('squeezeend', onSqueezeEnd);
-                    inputSource.removeEventListener('selectstart', onSelectStart);
-                    inputSource.removeEventListener('selectend', onSelectEnd);
-                }
-            }
-        });
+        //     if (inputSource.gamepad) {
+        //         // This is a gamepad input source
+        //         inputSource.addEventListener('squeezestart', onSqueezeStart);
+        //         inputSource.addEventListener('squeezeend', onSqueezeEnd);
+        //         inputSource.addEventListener('selectstart', onSelectStart);
+        //         inputSource.addEventListener('selectend', onSelectEnd);
+        //     }
+        // }
 
-        // Start the session
-        XRHelper.startXR(xrSession);
+        // xrSession.addEventListener('inputsourceschange', event => { 
+        //     for (let inputSource of event.removed) {
+        //         if (inputSource.gamepad) {
+        //             // This is a gamepad input source
+        //             inputSource.removeEventListener('squeezestart', onSqueezeStart);
+        //             inputSource.removeEventListener('squeezeend', onSqueezeEnd);
+        //             inputSource.removeEventListener('selectstart', onSelectStart);
+        //             inputSource.removeEventListener('selectend', onSelectEnd);
+        //         }
+        //     }
+        // });
+
+        // // Start the session
+        // XRHelper.startXR(xrSession);
+        
+        XRHelper.startXR(XrSessionTypes.HmdVR);
 
         vrbutton.textContent = 'Return From VR';
     } else {
@@ -296,6 +298,53 @@ vrbutton.addEventListener('click', async (e) => {
         vrbutton.textContent = 'Send To VR';
     }
 });
+
+// This function starts the WebXR session
+async function startXR() {
+    // Request a new WebXR session
+    xrSession = await navigator.xr.requestSession('immersive-vr', {
+        optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
+    });
+
+    // Set the renderer's XR session
+    renderer.xr.setSession(xrSession);
+
+    // Set up the render loop
+    xrSession.requestAnimationFrame(render);
+}
+
+// This function renders a frame
+function render(time, xrFrame) {
+    // Request the next animation frame
+    xrSession.requestAnimationFrame(render);
+
+    // Get the pose of the viewer
+    const pose = xrFrame.getViewerPose(xrReferenceSpace);
+
+    // If the pose is not null, render the scene
+    if (pose) {
+        // Get the WebGL layer
+        const layer = xrSession.renderState.baseLayer;
+
+        // Set the WebGL context's framebuffer
+        renderer.context.bindFramebuffer(renderer.context.FRAMEBUFFER, layer.framebuffer);
+
+        // Clear the canvas
+        renderer.clear();
+
+        // Render the scene for each view
+        for (let view of pose.views) {
+            // Get the viewport for the view
+            const viewport = layer.getViewport(view);
+
+            // Set the renderer's viewport
+            renderer.setViewport(viewport.x, viewport.y, viewport.width, viewport.height);
+
+            // Render the scene
+            renderer.render(scene, camera);
+        }
+    }
+}
     
 // Listen for changes to the 'meshes' select element and load the selected mesh
 loadMeshSelector.addEventListener('change', function (event) {
