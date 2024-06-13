@@ -46,7 +46,7 @@ if (navigator.xr === undefined) {
 // ----------------------------------------------------------------------------
 
 const fullScreenRenderer = vtkFullScreenRenderWindow.newInstance({
-    background: [0.5, 0.5, 0.5],
+    background: [0.0, 0.0, 0.0],
 });
 const renderer = fullScreenRenderer.getRenderer();
 const renderWindow = fullScreenRenderer.getRenderWindow();
@@ -160,6 +160,12 @@ function processData(meshNumber, addLight = true) {
             light2.setFocalPoint(0, 0, 0);
             light2.setIntensity(0.7);
             renderer.addLight(light2);
+
+            const light3 = vtkLight.newInstance();
+            light2.setPosition(0, -1, -1);
+            light2.setFocalPoint(0, 0, 0);
+            light2.setIntensity(0.9);
+            renderer.addLight(light3);
         }
 
         renderWindow.render();
@@ -192,15 +198,104 @@ resolutionChange.addEventListener('input', (e) => {
     renderWindow.render();
 });
 
-vrbutton.addEventListener('click', (e) => {
+let xrSession = null;
+
+function onSqueezeStart(event) {
+    console.log('Squeeze start');
+    alert('Squeeze start');
+}
+
+function onSqueezeEnd(event) {
+    console.log('Squeeze end');
+    alert('Squeeze end');
+}
+
+function onSelectStart(event) {
+    console.log('Select start');
+    alert('Select start');
+}
+
+function onSelectEnd(event) {
+    console.log('Select end');
+    alert('Select end');
+}
+
+// This function creates a line from the target ray
+function createPointer(inputSource) {
+    // Get the target ray
+    const targetRay = inputSource.targetRaySpace;
+
+    // Create a new line geometry
+    const geometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0), // Start at the origin
+        new THREE.Vector3(0, 0, -1) // End one unit in the -Z direction
+    ]);
+
+    // Create a new line material
+    const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
+
+    // Create a new line
+    const line = new THREE.Line(geometry, material);
+
+    // Set the line's matrix to the target ray's matrix
+    line.matrix.fromArray(targetRay.matrix);
+
+    // Update the line's matrix world
+    line.updateMatrixWorld(true);
+
+    return line;
+}
+
+vrbutton.addEventListener('click', async (e) => {
     if (vrbutton.textContent === 'Send To VR') {
-        XRHelper.startXR(XrSessionTypes.HmdVR);
+        console.log('Requesting XR session...');
+        // Request a new WebXR session
+        xrSession = await navigator.xr.requestSession('immersive-vr', {
+            optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
+        });
+
+        console.log(xrSession.inputSources); // Add this line
+        for (let inputSource of xrSession.inputSources) {
+            console.log(inputSource);
+            if (inputSource.targetRayMode === 'tracked-pointer') {
+                // This is a controller
+                const pointer = createPointer(inputSource);
+                scene.add(pointer);
+            }
+            
+            if (inputSource.gamepad) {
+                // This is a gamepad input source
+                inputSource.addEventListener('squeezestart', onSqueezeStart);
+                inputSource.addEventListener('squeezeend', onSqueezeEnd);
+                inputSource.addEventListener('selectstart', onSelectStart);
+                inputSource.addEventListener('selectend', onSelectEnd);
+            }
+        }
+
+        xrSession.addEventListener('inputsourceschange', event => { 
+            for (let inputSource of event.removed) {
+                if (inputSource.gamepad) {
+                    // This is a gamepad input source
+                    inputSource.removeEventListener('squeezestart', onSqueezeStart);
+                    inputSource.removeEventListener('squeezeend', onSqueezeEnd);
+                    inputSource.removeEventListener('selectstart', onSelectStart);
+                    inputSource.removeEventListener('selectend', onSelectEnd);
+                }
+            }
+        });
+
+        // Start the session
+        XRHelper.startXR(xrSession);
+
         vrbutton.textContent = 'Return From VR';
-        } else {
+    } else {
+        // End the session
         XRHelper.stopXR();
+        xrSession = null;
+
         vrbutton.textContent = 'Send To VR';
     }
-    });
+});
     
 // Listen for changes to the 'meshes' select element and load the selected mesh
 loadMeshSelector.addEventListener('change', function (event) {
