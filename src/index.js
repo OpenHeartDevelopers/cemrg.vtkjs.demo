@@ -4,7 +4,6 @@ import '@kitware/vtk.js/favicon';
 import '@kitware/vtk.js/Rendering/Profiles/Geometry';
 
 import vtkActor from '@kitware/vtk.js/Rendering/Core/Actor';
-
 import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction';
 import vtkFullScreenRenderWindow from '@kitware/vtk.js/Rendering/Misc/FullScreenRenderWindow';
 import vtkWebXRRenderWindowHelper from '@kitware/vtk.js/Rendering/WebXR/RenderWindowHelper';
@@ -22,11 +21,11 @@ import '@kitware/vtk.js/IO/Core/DataAccessHelper/JSZipDataAccessHelper';
 
 import vtkResourceLoader from '@kitware/vtk.js/IO/Core/ResourceLoader';
 
-import vtkLight from '@kitware/vtk.js/Rendering/Core/Light';
 
-// Custom UI controls, including button to start XR session
+import vtkLight from '@kitware/vtk.js/Rendering/Core/Light.js';
+// import MyVRManipulator from './MyVRManipulator.js';
 import controlPanel from './controller.html';
-import loadData from './loadData';
+// import loadData from './loadData';
 import { loadDataFromNumber } from './loadData.js';
 import generateCone from './generateData';
 
@@ -42,10 +41,7 @@ if (navigator.xr === undefined) {
         });
 }
 
-// ----------------------------------------------------------------------------
 // Standard rendering code setup
-// ----------------------------------------------------------------------------
-
 const fullScreenRenderer = vtkFullScreenRenderWindow.newInstance({
     background: [0.0, 0.0, 0.0],
 });
@@ -58,33 +54,19 @@ const XRHelper = vtkWebXRRenderWindowHelper.newInstance({
 const mapper = vtkMapper.newInstance();
 const actor = vtkActor.newInstance();
 
-// ----------------------------------------------------------------------------
-// Example code
-// ----------------------------------------------------------------------------
-// create a filter on the fly, sort of cool, this is a random scalars
-// filter we create inline, for a simple cone you would not need
-// this
-// ----------------------------------------------------------------------------
-
-let currentSource = null;
-
+// Clear the scene
 function clearScene(renderer, renderWindow) {
-    // Get all actors from the renderer
     const actors = renderer.getActors();
-
-    // Remove each actor from the renderer
     actors.forEach((actor) => {
         renderer.removeActor(actor);
     });
-
-    // Reset the camera
     renderer.resetCamera();
-
-    // Render the scene
     renderWindow.render();
 }
 
-// Function to load and process data
+// Load and process data
+let currentSource = null;
+
 function processData(meshNumber, addLight = true) {
     console.log('Loading data...');
 
@@ -122,7 +104,6 @@ function processData(meshNumber, addLight = true) {
                     const lut = vtkColorTransferFunction.newInstance();
                     lut.setRange(range[0], range[1]);
                     lut.addRGBPoint(range[0], 0.5, 0.0, 0.0);
-                    // lut.addRGBPoint((range[0] + range[1]) / 2.0, 0.0, 0.8, 0.0);
                     lut.addRGBPoint(range[1], 0.1, 0.0, 1.0);
 
                     lut.setDiscretize(true);
@@ -143,19 +124,19 @@ function processData(meshNumber, addLight = true) {
 
         actor.setMapper(mapper);
         actor.setPosition(0.0, 0.0, zPosition);
-        actor.getProperty().setSpecular(0.75);      // Set the specular coefficient [0, 1]
-        actor.getProperty().setSpecularPower(20); // Set the specular power
+        actor.getProperty().setSpecular(0.75);
+        actor.getProperty().setSpecularPower(20);
 
         renderer.addActor(actor);
         renderer.resetCamera();
 
-        if (addLight) { 
+        if (addLight) {
             const light = vtkLight.newInstance();
             light.setPosition(1, 1, 1);
             light.setFocalPoint(0, 0, 0);
             light.setIntensity(0.5);
             renderer.addLight(light);
-    
+
             const light2 = vtkLight.newInstance();
             light2.setPosition(-1, -1, -1);
             light2.setFocalPoint(0, 0, 0);
@@ -163,9 +144,9 @@ function processData(meshNumber, addLight = true) {
             renderer.addLight(light2);
 
             const light3 = vtkLight.newInstance();
-            light2.setPosition(0, -1, -1);
-            light2.setFocalPoint(0, 0, 0);
-            light2.setIntensity(0.9);
+            light3.setPosition(0, -1, -1);
+            light3.setFocalPoint(0, 0, 0);
+            light3.setIntensity(0.9);
             renderer.addLight(light3);
         }
 
@@ -176,11 +157,7 @@ function processData(meshNumber, addLight = true) {
 console.log("Initially load the first mesh")
 processData(0, true);
 
-
-// -----------------------------------------------------------
 // UI control handling
-// -----------------------------------------------------------
-
 fullScreenRenderer.addController(controlPanel);
 const representationSelector = document.querySelector('.representations');
 const resolutionChange = document.querySelector('.resolution');
@@ -191,11 +168,11 @@ representationSelector.addEventListener('change', (e) => {
     const newRepValue = Number(e.target.value);
     actor.getProperty().setRepresentation(newRepValue);
     renderWindow.render();
-    });
+});
 
 resolutionChange.addEventListener('input', (e) => {
     const opacity = Number(e.target.value);
-    actor.getProperty().setOpacity(opacity/10);
+    actor.getProperty().setOpacity(opacity / 10);
     renderWindow.render();
 });
 
@@ -204,23 +181,9 @@ let xrSession = null;
 vrbutton.addEventListener('click', async (e) => {
     if (vrbutton.textContent === 'Send To VR') {
         console.log('Requesting XR session...');
-        XRHelper.startXR(XrSessionTypes.HmdVR);
-        // try {
-        //     xrSession = await navigator.xr.requestSession('immersive-vr', {
-        //         optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'],
-        //     });
-
-        //     if (xrSession) {
-        //         // renderer.getRenderWindow().getApiSpecificRenderWindow().setXRSession(xrSession);
-
-        //         setupVRInteraction(xrSession, renderer);
-        //         setupVRManipulators(renderer, renderWindow);
-
-        //         vrbutton.textContent = 'Return From VR';
-        //     }
-        // } catch (error) {
-        //     console.error('Error starting XR session', error);
-        // }
+        await XRHelper.startXR(XrSessionTypes.HmdVR);
+        // setupVRManipulators(renderer, renderWindow);
+        vrbutton.textContent = 'Return From VR';
     } else {
         if (xrSession) {
             await xrSession.end();
@@ -230,86 +193,23 @@ vrbutton.addEventListener('click', async (e) => {
     }
 });
 
-function setupVRInteraction(xrSession, renderer) {
-    xrSession.addEventListener('inputsourceschange', (event) => {
-        event.added.forEach((inputSource) => {
-            if (inputSource.targetRayMode === 'tracked-pointer') {
-                const pointer = createPointer(inputSource);
-                renderer.getRenderWindow().getApiSpecificRenderWindow().addActor(pointer);
-            }
-
-            if (inputSource.gamepad) {
-                inputSource.addEventListener('squeezestart', onSqueezeStart);
-                inputSource.addEventListener('squeezeend', onSqueezeEnd);
-                inputSource.addEventListener('selectstart', onSelectStart);
-                inputSource.addEventListener('selectend', onSelectEnd);
-            }
-        });
-
-        event.removed.forEach((inputSource) => {
-            if (inputSource.gamepad) {
-                inputSource.removeEventListener('squeezestart', onSqueezeStart);
-                inputSource.removeEventListener('squeezeend', onSqueezeEnd);
-                inputSource.removeEventListener('selectstart', onSelectStart);
-                inputSource.removeEventListener('selectend', onSelectEnd);
-            }
-        });
-    });
-}
-
-function createPointer(inputSource) {
-    const geometry = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(0, 0, 0),
-        new THREE.Vector3(0, 0, -1)
-    ]);
-
-    const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
-    const line = new THREE.Line(geometry, material);
-
-    if (inputSource.targetRaySpace) {
-        const matrix = new THREE.Matrix4().fromArray(inputSource.targetRaySpace.matrix);
-        line.applyMatrix4(matrix);
-    }
-
-    return line;
-}
-
 function setupVRManipulators(renderer, renderWindow) {
     const interactor = renderWindow.getInteractor();
-    const vrManipulator = vtkCompositeVRManipulator.newInstance();
-    interactor.addManipulator(vrManipulator);
+    const vrManipulator = MyVRManipulator.newInstance();
+    interactor.addVRManipulator(vrManipulator);
     renderer.resetCamera();
     renderWindow.render();
 }
 
-function onSqueezeStart(event) {
-    console.log('Squeeze start');
-    alert('Squeeze start');
-}
-
-function onSqueezeEnd(event) {
-    console.log('Squeeze end');
-    alert('Squeeze end');
-}
-
-function onSelectStart(event) {
-    console.log('Select start');
-    alert('Select start');
-}
-
-function onSelectEnd(event) {
-    console.log('Select end');
-    alert('Select end');
-}
-    
 // Listen for changes to the 'meshes' select element and load the selected mesh
 loadMeshSelector.addEventListener('change', function (event) {
     const meshNumber = Number(event.target.value);
     const meshName = event.target.options[event.target.selectedIndex].text;
     console.log('Loading mesh:', meshNumber, meshName);
-        clearScene(renderer, renderWindow);
-        processData(meshNumber, false);
-    });
+    clearScene(renderer, renderWindow);
+    processData(meshNumber, false);
+});
+
 window.onload = function () {
     let message = ` Thank you for visiting the CEMRG website.
     
@@ -318,15 +218,12 @@ window.onload = function () {
     
     Once installed, click on the VR button below to view the model in VR.
     
-    Enjoy! `
+    Enjoy! `;
     alert(message);
 };
 
-// -----------------------------------------------------------
 // Make some variables global so that you can inspect and
 // modify objects in your browser's developer console:
-// -----------------------------------------------------------
-
 global.source = currentSource;
 global.mapper = mapper;
 global.actor = actor;
