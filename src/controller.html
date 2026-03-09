@@ -1,3 +1,14 @@
+<!--
+    controller.html
+    
+    UI panel rendered by vtkFullScreenRenderWindow.addController().
+    
+    Changes from original:
+      - 'resolution' slider renamed to 'opacity' (was mislabelled; it controlled
+        setOpacity, not geometric resolution). Class also updated to '.opacity'.
+      - Added 'Start Pulse' button for the heartbeat animation toggle.
+      - Removed the raw extension link (belongs in onboarding, not the live UI).
+-->
 <table>
     <tr>
         <td>
@@ -6,9 +17,14 @@
     </tr>
     <tr>
         <td>
+            <button class='pulsebutton' style="width: 100%">Start Pulse</button>
+        </td>
+    </tr>
+    <tr>
+        <td>
             <select class='meshes' style="width: 100%">
                 <option value='0' selected>Healthy</option>
-                <option value='1'>Atrial Fibrilation</option>
+                <option value='1'>Atrial Fibrillation</option>
                 <option value='2'>Heart Failure</option>
             </select>
         </td>
@@ -24,12 +40,8 @@
     </tr>
     <tr>
         <td>
-            <input class='resolution' type='range' min='1' max='10' value='10'  />
-        </td>
-    </tr>
-    <tr>
-        <td>
-            <a href="https://github.com/MozillaReality/WebXR-emulator-extension" target="_blank">Get the extension</a>
+            <label style="font-size: 11px; color: #aaa;">Opacity</label>
+            <input class='opacity' type='range' min='1' max='10' value='10' style="width: 100%" />
         </td>
     </tr>
 </table>
