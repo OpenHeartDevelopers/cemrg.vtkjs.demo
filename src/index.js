@@ -9,19 +9,24 @@
  *           └── lights  (3x vtkLight, added once at startup, never removed)
  *
  *   XRHelper  (vtkWebXRRenderWindowHelper)
- *     └── started with physicalScale derived from mesh bounding box
- *           so the heart appears at a comfortable ~40cm size in VR regardless
- *           of the raw VTK coordinate values (meshes are in millimetres).
+ *     └── physicalScale derived from mesh bounding box on each load so the heart
+ *         appears ~40cm across in the headset regardless of raw mm coordinates.
  *
  *   VR interaction model (seated user):
- *     Camera is FIXED.  The actor is the thing the user manipulates.
- *     Right trigger + move  ->  rotate actor (VRRotationManipulator)
- *     Right thumbstick      ->  scale actor  (VRScaleManipulator)
+ *     Camera is FIXED. The actor is the thing the user manipulates.
+ *     Right trigger + move hand  ->  rotate actor (VRRotationManipulator)
+ *     Right thumbstick Y-axis    ->  scale actor  (VRScaleManipulator)
+ *
+ *   Controls overlay (DOM):
+ *     A fixed-position HTML panel showing input bindings for desktop and VR.
+ *     Implemented as a DOM element (not a VTK 2D actor) because DOM elements
+ *     survive XR session transitions correctly -- a VTK 2D actor would require
+ *     manual recompositing into the XR framebuffer.
+ *     Switches active section automatically on XR entry/exit.
  *
  *   Pulse animation:
- *     requestAnimationFrame loop that oscillates actor scale at ~72 bpm.
- *     Toggled on/off by a button. Paused automatically when entering VR
- *     (a static model is easier to interrogate in XR).
+ *     requestAnimationFrame loop oscillating actor scale at ~72 bpm / +/-4%.
+ *     Paused automatically on VR entry (static model is easier to study in XR).
  */
 
 // --- vtk.js core imports ---
@@ -42,11 +47,12 @@ import '@kitware/vtk.js/IO/Core/DataAccessHelper/JSZipDataAccessHelper';
 
 // --- local modules ---
 import { VRRotationManipulator, VRScaleManipulator } from './MyVRManipulator.js';
+import { createControlsOverlay, setOverlayMode } from './controlsOverlay.js';
 import controlPanel from './controller.html';
 import { loadDataFromNumber } from './loadData.js';
 
 // ---------------------------------------------------------------------------
-// WebXR polyfill (Cardboard / legacy WebVR backward compatibility)
+// WebXR polyfill (Cardboard / legacy WebVR backward compat)
 // Only loaded if the browser has no native XR support.
 // ---------------------------------------------------------------------------
 if (navigator.xr === undefined) {
@@ -64,13 +70,13 @@ if (navigator.xr === undefined) {
 // Renderer setup
 // ---------------------------------------------------------------------------
 const fullScreenRenderer = vtkFullScreenRenderWindow.newInstance({
-    background: [0.04, 0.04, 0.08], // Near-black with a very slight blue tint
+    background: [0.04, 0.04, 0.08],
 });
 const renderer = fullScreenRenderer.getRenderer();
 const renderWindow = fullScreenRenderer.getRenderWindow();
 
-// XRHelper is the bridge between vtk.js and the WebXR device API.
-// physicalScale is configured after the first mesh loads (see processData).
+// XRHelper bridges vtk.js to the WebXR device API.
+// physicalScale is set after the first mesh loads (see processData).
 const XRHelper = vtkWebXRRenderWindowHelper.newInstance({
     renderWindow: fullScreenRenderer.getApiSpecificRenderWindow(),
 });
@@ -82,7 +88,7 @@ const mapper = vtkMapper.newInstance();
 const actor = vtkActor.newInstance();
 actor.setMapper(mapper);
 
-// Specular highlight gives the mesh a soft tissue / glass-like look
+// Specular highlight gives mesh a soft tissue / glass-like appearance
 actor.getProperty().setSpecular(0.6);
 actor.getProperty().setSpecularPower(30);
 actor.getProperty().setDiffuse(0.8);
@@ -91,36 +97,30 @@ actor.getProperty().setAmbient(0.15);
 renderer.addActor(actor);
 
 // ---------------------------------------------------------------------------
-// Lighting  --  added ONCE at startup and left in the renderer permanently.
+// Lighting -- added ONCE at startup, permanent.
 //
-// Bug fix: the original code added lights only on the first processData() call
-// and skipped them on subsequent calls. Since clearScene() removed actors but
-// not lights, the second mesh load had no lights at all.
-//
-// Fix: extract into setupLights(), call once, never remove.
+// Bug fix from original: lights were added conditionally in processData(),
+// which meant they disappeared after the first mesh switch. Now extracted
+// into setupLights() and called once here. clearScene() only removes actors.
 // ---------------------------------------------------------------------------
 
 /**
- * Adds a three-point lighting rig to the renderer.
- * Key light (front), fill light (opposite), rim light (below).
+ * Adds a three-point lighting rig: key (front), fill (back), rim (below).
  * @param {vtkRenderer} renderer
  */
 function setupLights(renderer) {
-    // Key light: primary illumination from front-upper-right
     const key = vtkLight.newInstance();
     key.setPosition(1, 1, 1);
     key.setFocalPoint(0, 0, 0);
     key.setIntensity(0.7);
     renderer.addLight(key);
 
-    // Fill light: softer counter-illumination from behind-lower-left
     const fill = vtkLight.newInstance();
     fill.setPosition(-1, -0.5, -1);
     fill.setFocalPoint(0, 0, 0);
     fill.setIntensity(0.4);
     renderer.addLight(fill);
 
-    // Rim / back light: separates the mesh from the background
     const rim = vtkLight.newInstance();
     rim.setPosition(0, -1.5, -1);
     rim.setFocalPoint(0, 0, 0);
@@ -135,28 +135,21 @@ setupLights(renderer);
 //
 // Root cause of VR controls flying off:
 //   WebXR operates in SI metres. vtk.js maps 1 VTK unit = 1 XR metre by default.
-//   Cardiac meshes in millimetres span ~80-200 VTK units => 80-200 METRES in XR.
+//   Cardiac meshes in mm span ~80-200 VTK units => 80-200 metres in XR.
 //   Any small hand movement (0.01 m = 10 VTK units) sends the viewpoint flying.
 //
 // Fix:
-//   physicalScale tells the XR runtime how many VTK units equal one physical metre.
-//   We derive it from the mesh bounding box so the heart always appears at
-//   a comfortable viewing size (~40 cm diagonal) regardless of mesh scale.
-//
 //   physicalScale = vtk_diagonal_units / target_physical_metres
-//
-//   For a 150 mm diagonal mesh targeting 0.40 m appearance:
-//     physicalScale = 150 / 0.40 = 375
-//   i.e. 375 VTK units (375 mm) map to 1 physical metre.
+//   For a 150mm diagonal mesh at 0.40m display size: scale = 375
+//   i.e. 375 VTK units map to 1 physical metre.
 // ---------------------------------------------------------------------------
 
 /**
- * Computes a physicalScale value so the mesh bounding-box diagonal maps to
- * a comfortable viewing size in VR.
- *
+ * Computes physicalScale so the mesh bounding-box diagonal maps to a comfortable
+ * size in VR.
  * @param   {vtkActor} actor
- * @param   {number}   targetDiameterMeters  Desired apparent size in XR (default 0.4 m)
- * @returns {number}   physicalScale to pass to the XR render window
+ * @param   {number}   targetDiameterMeters  Default 0.4 m
+ * @returns {number}
  */
 function computePhysicalScale(actor, targetDiameterMeters = 0.40) {
     const [xMin, xMax, yMin, yMax, zMin, zMax] = actor.getBounds();
@@ -167,8 +160,7 @@ function computePhysicalScale(actor, targetDiameterMeters = 0.40) {
     );
 
     if (diagonal < 1e-6) {
-        // Degenerate bounds; fall back to a safe default for mm meshes
-        console.warn('computePhysicalScale: degenerate bounds, using default scale 375');
+        console.warn('[CEMRG] computePhysicalScale: degenerate bounds, using default 375');
         return 375;
     }
 
@@ -177,13 +169,11 @@ function computePhysicalScale(actor, targetDiameterMeters = 0.40) {
 
 // ---------------------------------------------------------------------------
 // Colour mapping
-//
-// Applies a LUT to cell-data scalars when present.
-// Falls back to a flat red-toned surface for meshes without scalars.
 // ---------------------------------------------------------------------------
 
 /**
- * Configures the mapper colour mapping from VTK polydata cell data.
+ * Configures the mapper LUT from VTK polydata cell data.
+ * Falls back to flat anatomical red when no scalars are present.
  * @param {vtkPolyData} polydata
  */
 function applyColourMapping(polydata) {
@@ -191,7 +181,6 @@ function applyColourMapping(polydata) {
     const numberOfArrays = cellData.getNumberOfArrays();
 
     if (numberOfArrays === 0) {
-        // No scalar data: render as a flat anatomical red
         actor.getProperty().setColor(0.72, 0.12, 0.12);
         mapper.setScalarVisibility(false);
         return;
@@ -209,16 +198,15 @@ function applyColourMapping(polydata) {
 
     const [rangeMin, rangeMax] = scalars.getRange();
 
-    // Diverging colour map: deep red (low) -> vivid blue (high).
-    // Clinically meaningful for activation time or fibrosis density maps.
+    // Diverging: deep red (low) -> vivid blue (high).
+    // Clinically appropriate for activation time or fibrosis density maps.
     const lut = vtkColorTransferFunction.newInstance();
     lut.setRange(rangeMin, rangeMax);
     lut.addRGBPoint(rangeMin, 0.55, 0.0, 0.0);
     lut.addRGBPoint(rangeMax, 0.05, 0.05, 0.85);
 
-    // Discrete banding: one colour band per integer scalar step.
-    // This is appropriate for labelled region maps (e.g. 17-segment AHA model).
-    // For continuous scalar fields (activation time), set setDiscretize(false).
+    // Discrete banding: one band per integer scalar step (AHA 17-segment model).
+    // For continuous fields (activation time), set setDiscretize(false).
     lut.setDiscretize(true);
     lut.setNumberOfValues(Math.max(2, Math.round(rangeMax - rangeMin + 1)));
 
@@ -232,8 +220,7 @@ function applyColourMapping(polydata) {
 // ---------------------------------------------------------------------------
 
 /**
- * Removes all actors from the renderer WITHOUT removing lights.
- * Lights are persistent (added once in setupLights).
+ * Removes all actors WITHOUT removing lights (lights are permanent).
  * @param {vtkRenderer}     renderer
  * @param {vtkRenderWindow} renderWindow
  */
@@ -247,10 +234,8 @@ function clearScene(renderer, renderWindow) {
 // ---------------------------------------------------------------------------
 
 /**
- * Loads mesh by number, configures the actor and mapper, resets camera.
- * physicalScale is (re)computed each time in case mesh size changes significantly.
- *
- * @param {number}  meshNumber
+ * Loads mesh by index, configures actor/mapper, recomputes physicalScale for VR.
+ * @param {number} meshNumber
  */
 function processData(meshNumber) {
     console.log(`[CEMRG] Loading mesh index ${meshNumber}`);
@@ -264,7 +249,7 @@ function processData(meshNumber) {
         mapper.setInputData(polydata);
         applyColourMapping(polydata);
 
-        // Re-add actor (it may have been removed by clearScene)
+        // Re-add actor if clearScene() removed it
         if (!renderer.getActors().includes(actor)) {
             renderer.addActor(actor);
         }
@@ -272,19 +257,17 @@ function processData(meshNumber) {
         renderer.resetCamera();
         renderWindow.render();
 
-        // Recompute physicalScale so VR scale is always appropriate for this mesh.
-        // This must happen BEFORE the user enters XR, not during.
+        // Recompute physicalScale so VR scale is always correct for this mesh.
+        // Must happen before the user enters XR, not during.
         const scale = computePhysicalScale(actor);
         console.log(`[CEMRG] physicalScale for VR: ${scale.toFixed(1)} VTK units/m`);
         try {
-            // getApiSpecificRenderWindow() returns the WebGL/WebXR render window.
-            // setPhysicalScale is available on vtkOpenGLRenderWindow in vtk.js >= 28.
             fullScreenRenderer.getApiSpecificRenderWindow().setPhysicalScale(scale);
         } catch (e) {
             console.warn('[CEMRG] setPhysicalScale unavailable on this vtk.js build:', e.message);
         }
 
-        // Update the VR manipulators with the (possibly new) actor reference
+        // Sync manipulators with (potentially new) actor reference
         if (rotationManipulator) rotationManipulator.setActor(actor);
         if (scaleManipulator) scaleManipulator.setActor(actor);
     });
@@ -292,9 +275,6 @@ function processData(meshNumber) {
 
 // ---------------------------------------------------------------------------
 // VR manipulator setup
-//
-// Called once when the VR session starts (not before, because the interactor
-// style is only available in XR mode).
 // ---------------------------------------------------------------------------
 
 /** @type {VRRotationManipulator|null} */
@@ -303,13 +283,12 @@ let rotationManipulator = null;
 let scaleManipulator = null;
 
 /**
- * Registers the custom manipulators with the XR interactor.
- * Must be called AFTER XRHelper.startXR() resolves, because the XR
- * interactor style is not instantiated until the session begins.
+ * Registers custom manipulators with the XR interactor.
+ * Must be called AFTER XRHelper.startXR() resolves; the XR interactor
+ * style does not exist until the session is active.
  */
 function setupVRManipulators() {
     const interactor = renderWindow.getInteractor();
-
     if (!interactor) {
         console.error('[CEMRG] setupVRManipulators: no interactor available');
         return;
@@ -327,24 +306,17 @@ function setupVRManipulators() {
 }
 
 // ---------------------------------------------------------------------------
-// Pulse animation
-//
-// A sinusoidal scale oscillation at ~72 bpm (1.2 Hz) with ±4% amplitude.
-// Purely cosmetic: it makes the heart look alive in the demo.
-// Automatically paused when entering VR (a throbbing model is harder to study).
+// Pulse animation (~72 bpm, +/-4% scale, requestAnimationFrame based)
 // ---------------------------------------------------------------------------
 
-let pulseAnimationId = null;  // requestAnimationFrame handle
-let pulseBaseScale = 1.0;   // scale at the time animation started
+let pulseAnimationId = null;
+let pulseBaseScale = 1.0;
 const PULSE_FREQUENCY = 1.2;   // Hz (72 bpm)
-const PULSE_AMPLITUDE = 0.04;  // ±4% of actor scale
+const PULSE_AMPLITUDE = 0.04;  // +/-4% of current scale
 
-/**
- * Runs one animation frame for the heartbeat pulse.
- * @param {DOMHighResTimeStamp} timestamp
- */
+/** @param {DOMHighResTimeStamp} timestamp */
 function animatePulse(timestamp) {
-    const t = timestamp / 1000; // seconds
+    const t = timestamp / 1000;
     const oscillation = Math.sin(2 * Math.PI * PULSE_FREQUENCY * t);
     const s = pulseBaseScale * (1.0 + PULSE_AMPLITUDE * oscillation);
     actor.setScale(s, s, s);
@@ -352,23 +324,16 @@ function animatePulse(timestamp) {
     pulseAnimationId = requestAnimationFrame(animatePulse);
 }
 
-/**
- * Starts the pulse animation.
- */
 function startPulse() {
-    if (pulseAnimationId !== null) return; // already running
+    if (pulseAnimationId !== null) return;
     pulseBaseScale = actor.getScale()[0];
     pulseAnimationId = requestAnimationFrame(animatePulse);
 }
 
-/**
- * Stops the pulse animation and restores actor scale.
- */
 function stopPulse() {
     if (pulseAnimationId === null) return;
     cancelAnimationFrame(pulseAnimationId);
     pulseAnimationId = null;
-    // Restore to the pre-animation base scale
     actor.setScale(pulseBaseScale, pulseBaseScale, pulseBaseScale);
     renderWindow.render();
 }
@@ -381,41 +346,35 @@ fullScreenRenderer.addController(controlPanel);
 const vrButton = document.querySelector('.vrbutton');
 const loadMeshSelector = document.querySelector('.meshes');
 const representationSel = document.querySelector('.representations');
-const opacitySlider = document.querySelector('.opacity');   // was '.resolution'
+const opacitySlider = document.querySelector('.opacity');
 const pulseButton = document.querySelector('.pulsebutton');
 
-// --- Representation (points / wireframe / surface) ---
+// Representation (points / wireframe / surface)
 representationSel.addEventListener('change', (e) => {
     actor.getProperty().setRepresentation(Number(e.target.value));
     renderWindow.render();
 });
 
-// --- Opacity ---
-// Bug fix: original slider was labelled 'resolution' and connected to setOpacity.
-// The label is now corrected in controller.html to 'opacity'.
+// Opacity slider (1-10 -> 0.1-1.0)
+// Bug fix: original was labelled 'resolution' but controlled setOpacity.
 opacitySlider.addEventListener('input', (e) => {
-    // Slider range 1-10; map to opacity 0.1-1.0
     actor.getProperty().setOpacity(Number(e.target.value) / 10);
     renderWindow.render();
 });
 
-// --- Mesh selector ---
+// Mesh selector
 loadMeshSelector.addEventListener('change', (e) => {
     const meshNumber = Number(e.target.value);
-    const meshName = e.target.options[e.target.selectedIndex].text;
-    console.log(`[CEMRG] Switching to mesh: ${meshName}`);
+    console.log(`[CEMRG] Switching to mesh: ${e.target.options[e.target.selectedIndex].text}`);
 
-    // Stop pulse during load to avoid scale state corruption
     const wasAnimating = pulseAnimationId !== null;
     stopPulse();
-
     clearScene(renderer, renderWindow);
     processData(meshNumber);
-
     if (wasAnimating) startPulse();
 });
 
-// --- Pulse animation toggle ---
+// Pulse toggle button
 if (pulseButton) {
     pulseButton.addEventListener('click', () => {
         if (pulseAnimationId !== null) {
@@ -428,22 +387,20 @@ if (pulseButton) {
     });
 }
 
-// --- VR button ---
+// VR button
 //
 // Bug fixes vs original:
-//   1. xrSession was declared but never assigned, so xrSession.end() threw on exit.
-//      Fix: XRHelper.startXR() does not return the session directly in all vtk.js
-//      versions. We track VR state with a boolean instead and call XRHelper.stopXR().
-//   2. setupVRManipulators() was commented out. Now called after session starts.
-//   3. Pulse is paused on XR entry (static model easier to examine).
+//   1. xrSession was never assigned; exit path called .end() on null.
+//      Fix: use a boolean + XRHelper.stopXR().
+//   2. setupVRManipulators() was commented out. Now called post-session-start.
+//   3. Overlay mode is switched so the HUD shows the correct control bindings.
+//   4. Pulse is paused on XR entry.
 //
 // Note on reference space:
-//   vtk.js vtkWebXRRenderWindowHelper internally requests a 'local-floor' reference
-//   space for HmdVR sessions. For a SEATED user, 'local' is more appropriate (it does
-//   not shift the origin to the floor, avoiding a vertical offset when the user is
-//   in a chair). If your vtk.js build exposes setReferenceSpaceType() on the helper,
-//   call: XRHelper.setReferenceSpaceType('local');
-//   As of vtk.js 30.x this must be patched in the XR render window. Tracked upstream.
+//   vtk.js HmdVR internally requests 'local-floor', which shifts the world
+//   origin to the floor -- awkward for seated users (heart appears at shin height).
+//   The correct space for seated is 'local'. Expose XRHelper.setReferenceSpaceType()
+//   once it lands in the vtk.js public API. Tracked upstream.
 
 let vrIsActive = false;
 
@@ -451,7 +408,6 @@ vrButton.addEventListener('click', async () => {
     if (!vrIsActive) {
         console.log('[CEMRG] Requesting XR session...');
 
-        // Pause pulse before entering XR
         stopPulse();
         if (pulseButton) pulseButton.textContent = 'Start Pulse';
 
@@ -460,8 +416,10 @@ vrButton.addEventListener('click', async () => {
             vrIsActive = true;
             vrButton.textContent = 'Return From VR';
 
-            // Manipulators must be registered after the session is active
             setupVRManipulators();
+
+            // Switch overlay to VR bindings
+            setOverlayMode('vr');
 
         } catch (err) {
             console.error('[CEMRG] Failed to start XR session:', err);
@@ -480,17 +438,24 @@ vrButton.addEventListener('click', async () => {
         }
         vrIsActive = false;
         vrButton.textContent = 'Send To VR';
+
+        // Restore desktop bindings in overlay
+        setOverlayMode('desktop');
     }
 });
 
 // ---------------------------------------------------------------------------
-// Initial load
+// Startup
 // ---------------------------------------------------------------------------
+
+// Inject the controls HUD panel (DOM overlay, bottom-right corner, collapsible)
+createControlsOverlay();
+
+// Load the first mesh
 processData(0);
 
 // ---------------------------------------------------------------------------
 // Developer console access
-// Retaining these so the browser console can be used for live debugging.
 // ---------------------------------------------------------------------------
 global.actor = actor;
 global.mapper = mapper;

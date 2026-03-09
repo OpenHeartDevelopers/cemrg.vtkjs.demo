@@ -1,13 +1,13 @@
 <!--
     controller.html
     
-    UI panel rendered by vtkFullScreenRenderWindow.addController().
-    
     Changes from original:
-      - 'resolution' slider renamed to 'opacity' (was mislabelled; it controlled
-        setOpacity, not geometric resolution). Class also updated to '.opacity'.
-      - Added 'Start Pulse' button for the heartbeat animation toggle.
-      - Removed the raw extension link (belongs in onboarding, not the live UI).
+      - 'resolution' slider class renamed to 'opacity' (it controls setOpacity;
+        the original label was factually wrong).
+      - Added 'Start/Stop Pulse' button (.pulsebutton).
+      - Added 'Controls' overlay toggle button (.controlsbutton).
+      - Fixed 'Atrial Fibrillation' spelling.
+      - Removed extension link (onboarding concern, not live UI).
 -->
 <table>
     <tr>
@@ -17,7 +17,13 @@
     </tr>
     <tr>
         <td>
+            <!-- Label updated by JS to 'Stop Pulse' on init since pulse starts active -->
             <button class='pulsebutton' style="width: 100%">Start Pulse</button>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <button class='controlsbutton' style="width: 100%">Toggle Controls</button>
         </td>
     </tr>
     <tr>
@@ -40,7 +46,7 @@
     </tr>
     <tr>
         <td>
-            <label style="font-size: 11px; color: #aaa;">Opacity</label>
+            <label style="font-size: 11px; color: #aaa; display: block; margin-top: 4px;">Opacity</label>
             <input class='opacity' type='range' min='1' max='10' value='10' style="width: 100%" />
         </td>
     </tr>
