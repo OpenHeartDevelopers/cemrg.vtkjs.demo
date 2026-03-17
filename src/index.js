@@ -29,6 +29,12 @@
  *     Paused automatically on VR entry (static model is easier to study in XR).
  */
 
+import '@kitware/vtk.js/Rendering/Profiles/Geometry';
+
+// Should return the vtkOpenGLRenderer constructor, not undefined
+const factory = window.renderWindow?.getViews()[0]?.getViewNodeFactory?.();
+console.log(factory?.createNode(window.renderer));
+
 // --- vtk.js core imports ---
 import vtkActor from '@kitware/vtk.js/Rendering/Core/Actor';
 import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction';
